@@ -1,43 +1,36 @@
 #include <Arduino.h>
 
-/**
- * Task Handles
- * Used to control tasks later,such as deleting,suspending,or resuming
- */
-TaskHandle_t TaskBlinkHandle=NULL;
-TaskHandle_t TaskSerialHandle=NULL;
+//Priority Definitions
+#define HIGH_PRIO 3
+#define LOW_PRIO 1
 
-const int LED_PIN=2;  //Define LED Pin
-
-//Task A:LED Blinking
-void Task_Blink(void* pvParameters)
+//Task A: High Priority Monitor
+void Task_High(void* pvParameters)
 {
-  /*Task Setup*/
-  pinMode(LED_PIN,OUTPUT);
-
-  /*Task Infinite Loop*/
-  for (;;)
-  {
-    digitalWrite(LED_PIN,HIGH);
-    vTaskDelay(500/portTICK_PERIOD_MS);
-    digitalWrite(LED_PIN,LOW);
-    vTaskDelay(500/portTICK_PERIOD_MS);
-  }
+ for (;;)
+ {
+   Serial.println("[HIGH] priority task is running");
+   //Crucial: High priority task must sleep to let lower priority tasks run
+    vTaskDelay(1000/portTICK_PERIOD_MS);
+ }
 }
 
-//Task B:System Status Print
-void Task_Serial(void* pvParameters)
+//Task B: Low Priority Preemption Test
+void Task_Low(void* pvParameters)
 {
-  for(;;){
-  Serial.print("[INFO] System running on Core: ");
-  Serial.print(xPortGetCoreID()); //Get the core ID
-  Serial.print("|Uptime:");
-  Serial.print(millis()/1000);
-  Serial.print("s");
-
-  //Print every 2 seconds
-  vTaskDelay(2000/portTICK_PERIOD_MS);
-  }
+  
+  long count=0;
+  for (;;)
+  {
+    count++;
+    //Simulating heavy computation without delay
+    if (count%1000000==0)
+    {
+      Serial.println("[LOW] I am doing heavy calculations...");
+    }
+    //If you uncomment the line below,the system resumes normal scheduling
+    //vTaskDelay(1/portTICK_PERIOD_MS);
+  }  
 }
 
 void setup() {
@@ -45,43 +38,31 @@ void setup() {
   //Wait for Serial stability
   vTaskDelay(1000/portTICK_PERIOD_MS);
 
-  Serial.println("Creating FreeRTOS Tasks...");
+  Serial.println("---Priority & Preemption Test Start---");
 
-  /**
-   * 1.Task_Blink:Function pointer
-   * 2."Blink":Debug name
-   * 3.2048:Stack size in bytes
-   * 4.NULL:Parameters passed to task
-   * 5.1:priority,higher is more urgent
-   * 6.&TaskBlinkHandle:Handle Reference
-   * 7.Core ID: 0 or 1
-   */
+  //Create High Priority Task
   xTaskCreatePinnedToCore(
-    Task_Blink,
-    "BlinkTask",
+    Task_High,
+    "HIGHTask",
     2048,
     NULL,
-    1,
-    &TaskBlinkHandle,
+    HIGH_PRIO,
+    NULL,
     1
   );
 
+  //Create Low Priority Task
   xTaskCreatePinnedToCore(
-    Task_Serial,
-    "SerialTask",
+    Task_Low,
+    "LOWTask",
     2048,
     NULL,
-    1,
-    &TaskSerialHandle,
+    LOW_PRIO,
+    NULL,
     1
   );
-
-  Serial.println("Tasks started successfully");
 }
 
 void loop() {
-  /**
-   * In RTOS,loop() runs in the priorty 1 IDLE task.
-   * Better to keep is empty and use dedicated tasks.
-   */
+  //Keep empty
 }
