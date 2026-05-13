@@ -1,35 +1,31 @@
 #include <Arduino.h>
 
-//Priority Definitions
-#define HIGH_PRIO 3
-#define LOW_PRIO 1
-
-//Task A: High Priority Monitor
-void Task_High(void* pvParameters)
+/**
+ * Task A: Simulating high-frequency sensor sampling
+ * Runs on Core 0 
+ */
+void Task_Sensor(void* pvParameters)
 {
  for (;;)
  {
-   Serial.println("[HIGH] priority task is running");
-   //Crucial: High priority task must sleep to let lower priority tasks run
+   Serial.print("[Sensor] Reading on Core:");
+   Serial.println(xPortGetCoreID());  //Get current Core ID
     vTaskDelay(1000/portTICK_PERIOD_MS);
  }
 }
 
-//Task B: Low Priority Preemption Test
-void Task_Low(void* pvParameters)
+/**
+ * Task B: Simulating complex logic computation
+ * Runs on Core 1
+ */
+void Task_Logic(void* pvParameters)
 {
   
-  long count=0;
   for (;;)
   {
-    count++;
-    //Simulating heavy computation without delay
-    if (count%1000000==0)
-    {
-      Serial.println("[LOW] I am doing heavy calculations...");
-    }
-    //If you uncomment the line below,the system resumes normal scheduling
-    //vTaskDelay(1/portTICK_PERIOD_MS);
+    Serial.print("[Logic] Computing on Core: ");
+    Serial.println(xPortGetCoreID());
+    vTaskDelay(1500/portTICK_PERIOD_MS);
   }  
 }
 
@@ -38,31 +34,32 @@ void setup() {
   //Wait for Serial stability
   vTaskDelay(1000/portTICK_PERIOD_MS);
 
-  Serial.println("---Priority & Preemption Test Start---");
+  Serial.println("---Starting Dual-Core Execution---");
 
-  //Create High Priority Task
+  //Blind sensor task to Core 0
   xTaskCreatePinnedToCore(
-    Task_High,
-    "HIGHTask",
+    Task_Sensor,
+    "SensorTask",
     2048,
     NULL,
-    HIGH_PRIO,
+    1,
     NULL,
-    1
+    0
   );
 
-  //Create Low Priority Task
+  //Blind logic task to Core 1
   xTaskCreatePinnedToCore(
-    Task_Low,
-    "LOWTask",
+    Task_Logic,
+    "LogicTask",
     2048,
     NULL,
-    LOW_PRIO,
+    1,
     NULL,
     1
   );
 }
 
 void loop() {
-  //Keep empty
+  //Keep empty.The loop task runs on Core 1 by default
+  vTaskDelete(NULL);
 }
