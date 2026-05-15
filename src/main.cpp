@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
 
 const int PWM_CHANNEL=0;
 const int PWM_FREQ=5000;
