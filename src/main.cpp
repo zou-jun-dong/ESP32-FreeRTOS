@@ -2,95 +2,68 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-const int PWM_CHANNEL=0;
-const int PWM_FREQ=5000;
-const int PWM_RESOLUTION=8;  //0-255
-const int LED_PIN=2;
+const char* ssid="iPhone";
+const char* password="zjd20061212";
+const char* mqtt_server="192.168.2.81";
 
-volatile int shared_breath_step;  //Prevents compiler optimization
+WiFiClient espClient;
+PubSubClient client(espClient);
 
-//Task A: State Controller
-void Task_Controller(void* pvParameters)
+
+//Task: MQTT Data Publishing
+void Task_MQTT_Publish(void* pvParameters)
 {
  for (;;)
  {
-  //Simulate State 1: Slow breathing
-   shared_breath_step=1;
-   Serial.println("[Controller] Set breathing speed to SLOW");
-   vTaskDelay(5000/portTICK_PERIOD_MS);
-   //Simulate State 2: Fast breathing
-   shared_breath_step=5;
-   Serial.println("[Controller] Set breathing speed to FAST");
-    vTaskDelay(1000/portTICK_PERIOD_MS);
- }
-}
-
-//Task B: Breathing Light Driver
-//Execute breathing logic based on global variable
-void Task_BreathingLight(void* pvParameters)
-{
-  //Initialize PWM 
-  ledcSetup(PWM_CHANNEL,PWM_FREQ,PWM_RESOLUTION);
-    ledcAttachPin(LED_PIN,PWM_CHANNEL);
-    int dutyCycle=0;
-    bool fadeUp=true;
-  
-    for (;;)
+   if (!client.connected())  //Check MQTT connection status
+   {
+    Serial.println("[MQTT]Disconnected.Reconnecting...");
+    if (client.connect("ESP32_S3_Client"))  //Simple reconnect logic
     {
-      ledcWrite(PWM_CHANNEL,dutyCycle);
-      //Read shared variable for step size
-      if (fadeUp)
-      {
-        dutyCycle=shared_breath_step+dutyCycle;
-        if (dutyCycle>255)
-        {
-          dutyCycle=255;
-          fadeUp=false;
-        }
-      }else{
-        dutyCycle=dutyCycle-shared_breath_step;
-        if (dutyCycle<0)
-        {
-          dutyCycle=0;
-          fadeUp=true;
-        }
-        
-      }
-      
-    
-    //Base delay for smoothness
-    vTaskDelay(10/portTICK_PERIOD_MS);}
-  
+      Serial.println("[MQTT] Connected");
+    }
+   }
+
+   if (client.connected())
+   {
+    //Builde JSON data payload
+    String payload="{\"device\":\"ESP32-S3\", \"status\":\"active\", \"uptime\":" + String(millis() / 1000) + "}";
+    client.publish("esp32/sensor/data",payload.c_str());   //Publish to specific topic
+    Serial.print("[MQTT] Published:");
+    Serial.println(payload);
+   }
+   client.loop();   //Maintain MQTT client heartbeat
+   vTaskDelay(5000/portTICK_PERIOD_MS);  //Publish data every 5 seconds
+ }
 }
 
 void setup() {
   Serial.begin(115200);
   //Wait for Serial stability
   vTaskDelay(1000/portTICK_PERIOD_MS);
+  //Initialize WiFi and MQTT
+  WiFi.begin(ssid,password);
+  if (!WiFi.isConnected())
+  {
+    delay(500);
+    Serial.print(".");
+  }
+  client.setServer(mqtt_server,1883);
+  
 
   Serial.println("---Shared Variable Communication Start---");
 
-  //Blind controller task to Core 0
+  //Pin network task to Core 0,leaving Core 1 for business logic
   xTaskCreatePinnedToCore(
-    Task_Controller,
-    "ControllerTask",
-    2048,
+    Task_MQTT_Publish,
+    "MQTTPubTask",
+    4096,
     NULL,
     1,
     NULL,
     0
   );
 
-  //Blind breathingDriver task to Core 1
-  xTaskCreatePinnedToCore(
-    Task_BreathingLight,
-    "BreathTask",
-    2048,
-    NULL,
-    1,
-    NULL,
-    1
-  );
 }
 
 void loop() {
