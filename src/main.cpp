@@ -1,39 +1,31 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
-
-const char* ssid="iPhone";
-const char* password="zjd20061212";
-const char* mqtt_server="192.168.2.81";
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-
+typedef struct 
+{
+  uint32_t counter;
+  uint8_t statusCode;
+  uint8_t breathLightState;
+}DataPacket;
+QueueHandle_t xDataQueue;
 
 //Task: MQTT Data Publishing
-void Task_MQTT_Publish(void* pvParameters)
+void Task_Sender(void* pvParameters)
 {
+  DataPacket packetToSend;
+   packetToSend.counter=0;
+   packetToSend.statusCode=0;
+   packetToSend.breathLightState=0;
  for (;;)
  {
-   if (!client.connected())  //Check MQTT connection status
+   packetToSend.counter++;
+   packetToSend.breathLightState=(packetToSend.breathLightState+15)%255;
+   BaseType_t xStatus=xQueueSend(xDataQueue,&packetToSend,(TickType_t)10);
+   if (xStatus==pdPASS)
    {
-    Serial.println("[MQTT]Disconnected.Reconnecting...");
-    if (client.connect("ESP32_S3_Client"))  //Simple reconnect logic
-    {
-      Serial.println("[MQTT] Connected");
-    }
+    Serial.printf("[Sender] ENQUEUED -> Count: %lu | Status: %d | Light PWM: %d\n", packetToSend.counter, packetToSend.statusCode, packetToSend.breathLightState);
+   }else{
+    Serial.println("[Sender] WARNING: Queue is full! Data dropped.");
    }
-
-   if (client.connected())
-   {
-    //Builde JSON data payload
-    String payload="{\"device\":\"ESP32-S3\", \"status\":\"active\", \"uptime\":" + String(millis() / 1000) + "}";
-    client.publish("esp32/sensor/data",payload.c_str());   //Publish to specific topic
-    Serial.print("[MQTT] Published:");
-    Serial.println(payload);
-   }
-   client.loop();   //Maintain MQTT client heartbeat
-   vTaskDelay(5000/portTICK_PERIOD_MS);  //Publish data every 5 seconds
+   vTaskDelay(1000/portTICK_PERIOD_MS);
  }
 }
 
@@ -42,27 +34,24 @@ void setup() {
   //Wait for Serial stability
   vTaskDelay(1000/portTICK_PERIOD_MS);
   //Initialize WiFi and MQTT
-  WiFi.begin(ssid,password);
-  if (!WiFi.isConnected())
+  Serial.println("--- FreeRTOS Queue Initialization ---");
+  xDataQueue=xQueueCreate(10,sizeof(DataPacket));
+  if (xDataQueue!=NULL)
   {
-    delay(500);
-    Serial.print(".");
-  }
-  client.setServer(mqtt_server,1883);
-  
-
-  Serial.println("---Shared Variable Communication Start---");
-
-  //Pin network task to Core 0,leaving Core 1 for business logic
+    
   xTaskCreatePinnedToCore(
-    Task_MQTT_Publish,
-    "MQTTPubTask",
-    4096,
+    Task_Sender,
+    "SenderTask",
+    2048,
     NULL,
     1,
     NULL,
-    0
+    1
   );
+
+}else{
+  Serial.println("--- FreeRTOS Queue Initialization ---");
+}
 
 }
 
