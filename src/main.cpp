@@ -29,12 +29,27 @@ void Task_Sender(void* pvParameters)
  }
 }
 
+void Task_Receiver(void *pvParameters)
+{
+  DataPacket receivedPacket;
+  for (;;)
+  {
+    BaseType_t xStatus=xQueueReceive(xDataQueue,&receivedPacket,pdMS_TO_TICKS(2000));
+    if (xStatus==pdPASS)
+    {
+      Serial.printf("[Receiver] DEQUEUED <- Count: %lu | Status: %d | Light PWM: %d\n",receivedPacket.counter,receivedPacket.statusCode,receivedPacket.breathLightState);
+    }else{
+      Serial.println("[Receiver] INFO: Waiting for data timeout. Queue is currently empty.");
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   //Wait for Serial stability
   vTaskDelay(1000/portTICK_PERIOD_MS);
   //Initialize WiFi and MQTT
-  Serial.println("--- FreeRTOS Queue Initialization ---");
+  Serial.println("--- FreeRTOS Producer-Consumer Queue Test ---");
   xDataQueue=xQueueCreate(10,sizeof(DataPacket));
   if (xDataQueue!=NULL)
   {
@@ -49,8 +64,10 @@ void setup() {
     1
   );
 
+  xTaskCreatePinnedToCore(Task_Receiver,"RecievedTask",2048,NULL,1,NULL,0);
+
 }else{
-  Serial.println("--- FreeRTOS Queue Initialization ---");
+  Serial.println("System] FATAL ERROR: Failed to create queue.");
 }
 
 }
