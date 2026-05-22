@@ -1,38 +1,54 @@
 #include <Arduino.h>
 
-SemaphoreHandle_t xSerialMutex=NULL;  //Global declaration of Mutex Handel
+//Declare two Mutexes
+SemaphoreHandle_t xMutexA=NULL;
+SemaphoreHandle_t xMutexB=NULL;
 
-//Task A:Simulating high-frequency Serial usage
-void Task_PrintA(void* pvParameters)
+//Task 1:Take A,then B
+void Task_Print1(void* pvParameters)
 {
  for (;;)
  {
-    if (xSemaphoreTake(xSerialMutex,portMAX_DELAY)==pdTRUE)
+  Serial.println("[Task 1] Attempting to take Mutex A...");
+    if (xSemaphoreTake(xMutexA,portMAX_DELAY)==pdTRUE)
     {
-      Serial.print("[Task A] ");
-      Serial.print("Data packet: ");
-      Serial.print("10101010");
-      Serial.println(" -> Transaction Complete.");
-      xSemaphoreGive(xSerialMutex);   //Must release the lock immediately after using the shared resource
+      Serial.println("[Task 1] Successfully took Mutex A!");
+      //Intentional delay to yield CPU,allowing Task 2 to grab Mutex B
+      vTaskDelay(50/portTICK_PERIOD_MS);
+      Serial.println("[Task 1] Attempting to take Mutex B...");
+      //This is will block forever because Mutex B is held by Task2
+      if (xSemaphoreTake(xMutexB,portMAX_DELAY)==pdTRUE)
+      {
+        Serial.println("[Task 1] Got both! Working...");
+        xSemaphoreGive(xMutexB);
+      }
+      xSemaphoreGive(xMutexA);
     }
-    vTaskDelay(10/portTICK_PERIOD_MS);
+    vTaskDelay(100/portTICK_PERIOD_MS);
  }
 }
 
-//Task B:Simulating high-frequency Serial usage
-void Task_PrintB(void* pvParameters)
+//Task 1:Take B,then A
+void Task_Print2(void* pvParameters)
 {
   for (;;)
   {
-    if (xSemaphoreTake(xSerialMutex,portTICK_PERIOD_MS))
+    if (xSemaphoreTake(xMutexB,portTICK_PERIOD_MS)==pdTRUE)
     {
-      Serial.print("[Task B] ");
-      Serial.print("WARNING! ");
-      Serial.print("Sensor reading is abnormal.");
-      Serial.println(" -> Alert Sent.");
-      xSemaphoreGive(xSerialMutex);  
+      Serial.println("[Task 2] Successfully took Mutex B!");
+      //Intentional delay to yield CPU,allowing Task 1 to grab Mutex A
+      vTaskDelay(50/portTICK_PERIOD_MS);
+
+      Serial.println("[Task 2] Attempting to take Mutex A...");
+      //This will block forever becaues Mutex A is held by Task 1
+      if (xSemaphoreTake(xMutexA,portMAX_DELAY)==pdTRUE)
+      {
+         Serial.println("[Task 2] Got both! Working...");
+         xSemaphoreGive(xMutexA);
+      }
+      xSemaphoreGive(xMutexB);     
     }
-    vTaskDelay(10/portTICK_PERIOD_MS);
+    vTaskDelay(100/portTICK_PERIOD_MS);
   }
 }
 
@@ -41,17 +57,18 @@ void setup() {
   //Wait for Serial stability
   vTaskDelay(1000/portTICK_PERIOD_MS);
 
-  Serial.println("--- FreeRTOS Mutex Peripheral Protection Test ---");
+  Serial.println("--- FreeRTOS Deadlock Simulation Start ---");
 
-  xSerialMutex=xSemaphoreCreateMutex();  //Create a Mutex
-  if (xSerialMutex!=NULL)
+  //Create two Mutexes
+  xMutexA=xSemaphoreCreateMutex();
+  xMutexB=xSemaphoreCreateMutex();
+  
+  if (xMutexA!=NULL&&xMutexB!=NULL)
   {
-    //Create task with high priority to ensure real-time responsiveness
-    xTaskCreatePinnedToCore(Task_PrintA,"PrintATask",2048,NULL,1,NULL,1); 
-    xTaskCreatePinnedToCore(Task_PrintB,"PrintBTask",2048,NULL,1,NULL,1);  
+    //Create two tasks,same core,same priority
+    xTaskCreatePinnedToCore(Task_Print1,"Print1Task",2048,NULL,1,NULL,1); 
+    xTaskCreatePinnedToCore(Task_Print2,"Print2Task",2048,NULL,1,NULL,1);  
   Serial.println("[System] Mutex created.Task started.");
-  }else{
-    Serial.println("[System] FATAL ERROR; Mutex creation failed.");
   }
 }
 
